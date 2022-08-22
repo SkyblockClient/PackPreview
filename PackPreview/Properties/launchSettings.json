@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "PackPreview": {
+      "commandName": "Project",
+      "commandLineArgs": "pack=compliance.zip scale=4"
+    }
+  }
+}

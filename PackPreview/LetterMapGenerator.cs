@@ -53,7 +53,7 @@ namespace PackPreview
                 var letterSize = GetCharacterSize(ascii, pointer.location);
                 lettermap[letter] = new LetterPointer(pointer.location, letterSize);
 
-                Console.WriteLine(letter + " " + letterSize);
+                //Console.WriteLine(letter + " " + letterSize);
             }
 
             return lettermap;

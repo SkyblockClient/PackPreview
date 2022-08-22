@@ -12,23 +12,43 @@ namespace PackPreview
     {
         const int HOTBAR_BOTTOM_PIXEL = 1;
 
-        const int SCALE = 4;
         private ITextureLoader Loader { get; }
-        private Image<Rgba32> Ascii;
+
+        private Image<Rgba32> AsciiPng;
+        private ImageCropper AsciiCropper;
+
+        private Image<Rgba32> WidgetsPng;
+        private ImageCropper WidgetsCropper;
+
+        private Image<Rgba32> IconsPng;
+        private ImageCropper IconsCropper;
+
         private Dictionary<char, LetterPointer> letterMap;
 
         public PackPreviewGenerator(ITextureLoader loader)
         {
             this.Loader = loader;
-            this.Ascii = Loader.LoadTexture(
-                "assets/minecraft/textures/font/ascii.png", 
-                "assets/minecraft/mcpatcher/font/ascii.png"
-                );
-            this.letterMap = LetterMapGenerator.GenerateLetterMapFromAscii(Ascii);
+            this.AsciiPng = Loader.LoadTexture(
+                "assets/minecraft/mcpatcher/font/ascii.png",
+                "assets/minecraft/textures/font/ascii.png"
+            );
+            this.letterMap = LetterMapGenerator.GenerateLetterMapFromAscii(AsciiPng);
+
+
         }
 
-        public Image<Rgba32> GeneratePreview()
+        int SCALE = 4;
+        public Image<Rgba32> GeneratePreview(int scale)
         {
+            this.SCALE = scale;
+
+            this.WidgetsPng = Loader.LoadTexture("assets/minecraft/textures/gui/widgets.png");
+            this.WidgetsCropper = new ImageCropper(WidgetsPng, 256, scale);
+            this.IconsPng = Loader.LoadTexture("assets/minecraft/textures/gui/icons.png");
+            this.IconsCropper = new ImageCropper(IconsPng, 256, scale);
+
+            this.AsciiCropper = new ImageCropper(AsciiPng, 128, scale);
+
             var outputImage = new Image<Rgba32>(182 * SCALE, (59 + HOTBAR_BOTTOM_PIXEL * 2) * SCALE); // create output image of the correct dimensions
             outputImage.Mutate(o => o
                 .DrawImage(ButtonGroup(), new Point(0, 0), 1f)
@@ -37,15 +57,14 @@ namespace PackPreview
             return outputImage;
         }
 
-        Image LetterGroup(string letters)
+        Image LetterGroupOld(string letters)
         {
             var fontScale = 1;
             var scale = SCALE;
             var letterSize = new Size(8, 8);
 
 
-
-            fontScale = Ascii.Width / 128;
+            fontScale = AsciiPng.Width / 128;
 
             scale = SCALE / fontScale;
 
@@ -67,7 +86,7 @@ namespace PackPreview
             for (int i = 0; i < letters.Length; i++)
             {
                 var pointer = letterMap[letters[i]];
-                using var letterPng = ImageUtils.CropImage(this.Ascii, pointer.location.X * fontScale, pointer.location.Y * fontScale, letterSize.Width, letterSize.Height, scale);
+                using var letterPng = ImageUtils.CropImage(this.AsciiPng, pointer.location.X * fontScale, pointer.location.Y * fontScale, letterSize.Width, letterSize.Height, scale);
 
                 textPng.Mutate(x => x
                     .DrawImage(letterPng, new Point(currentWidth, 0), 1.0F)
@@ -80,6 +99,50 @@ namespace PackPreview
 
             return textPng;
         }
+        Image LetterGroup(string letters)
+        {
+            var fontScale = 1;
+            var scale = SCALE;
+            var letterSize = new Size(8, 8);
+
+
+            fontScale = AsciiPng.Width / 128;
+
+            scale = SCALE / fontScale;
+
+            letterSize = new Size(8 * fontScale, 8 * fontScale);
+
+            var expectedWidths = new int[letters.Length];
+            var charDistance = (1 * fontScale * scale);
+
+            for (int i = 0; i < letters.Length; i++)
+            {
+                var pointer = this.letterMap[letters[i]];
+                expectedWidths[i] = (pointer.width * scale) + charDistance;
+            }
+
+            var textPng = new Image<Rgba32>(expectedWidths.Sum() - charDistance, letterSize.Height * scale);
+
+            var currentWidth = 0;
+
+            for (int i = 0; i < letters.Length; i++)
+            {
+                var pointer = letterMap[letters[i]];
+                // using var letterPng = ImageUtils.CropImage(this.AsciiPng, pointer.location.X * fontScale, pointer.location.Y * fontScale, letterSize.Width, letterSize.Height, scale);
+                using var letterPng = AsciiCropper.Crop(pointer.location.X, pointer.location.Y, letterSize.Width, letterSize.Height);
+
+                textPng.Mutate(x => x
+                    .DrawImage(letterPng, new Point(currentWidth, 0), 1.0F)
+                );
+
+                currentWidth += expectedWidths[i];
+            }
+
+            textPng.SaveAsPng("output/text.png");
+
+            return textPng;
+        }
+
         Image ButtonGroup()
         {
             var scale = SCALE;
@@ -111,8 +174,8 @@ namespace PackPreview
             var buttonStrongPng = new Image<Rgba32>(outputDimensions.Width, outputDimensions.Height);
 
             using var widgetsPng = Loader.LoadTexture("assets/minecraft/textures/gui/widgets.png");
-            using var leftHalf = ImageUtils.CropImage(widgetsPng, 0, 86, buttonWidth / 2, 20, scale);
-            using var rightHalf = ImageUtils.CropImage(widgetsPng, totalButtonWidth - buttonWidth / 2, 86, buttonWidth / 2, 20, scale);
+            using var leftHalf =  WidgetsCropper.Crop(0, 86, buttonWidth / 2, 20);
+            using var rightHalf = WidgetsCropper.Crop(totalButtonWidth - buttonWidth / 2, 86, buttonWidth / 2, 20);
 
             buttonStrongPng.Mutate(x => x
                 .DrawImage(leftHalf, new Point(0, 0), 1.0F)
@@ -140,9 +203,8 @@ namespace PackPreview
 
             var buttonWeakPng = new Image<Rgba32>(outputDimensions.Width, outputDimensions.Height);
 
-            using var widgetsPng = Loader.LoadTexture("assets/minecraft/textures/gui/widgets.png");
-            using var leftHalf = ImageUtils.CropImage(widgetsPng, 0, 66, buttonWidth / 2, 20, scale);
-            using var rightHalf = ImageUtils.CropImage(widgetsPng, totalButtonWidth - buttonWidth / 2, 66, buttonWidth / 2, 20, scale);
+            using var leftHalf = WidgetsCropper.Crop(0, 66, buttonWidth / 2, 20);
+            using var rightHalf = WidgetsCropper.Crop(totalButtonWidth - buttonWidth / 2, 66, buttonWidth / 2, 20);
 
             buttonWeakPng.Mutate(x => x
                 .DrawImage(leftHalf, new Point(0, 0), 1.0F)
@@ -184,9 +246,8 @@ namespace PackPreview
 
             var heartsPng = new Image<Rgba32>(outputDimensions.Width, outputDimensions.Height);
 
-            using var iconsPng = Loader.LoadTexture("assets/minecraft/textures/gui/icons.png");
-            using var fullHeart = ImageUtils.CropImage(iconsPng, 52, 0, 9, 9, scale);
-            using var emptyHeart = ImageUtils.CropImage(iconsPng, 16, 0, 9, 9, scale);
+            using var fullHeart =  IconsCropper.Crop(52, 0, 9, 9);
+            using var emptyHeart = IconsCropper.Crop(16, 0, 9, 9);
 
             for (int i = 0; i < 10; i++)
             {
@@ -206,8 +267,7 @@ namespace PackPreview
 
             var xpbarPng = new Image<Rgba32>(outputDimensions.Width, outputDimensions.Height);
 
-            using var iconsPng = Loader.LoadTexture("assets/minecraft/textures/gui/icons.png");
-            using var xpbar = ImageUtils.CropImage(iconsPng, 0, 69, 182, 5, scale);
+            using var xpbar = IconsCropper.Crop(0, 69, 182, 5);
 
             xpbarPng.Mutate(x => x
                 .DrawImage(xpbar, new Point(0, 0), 1f)
@@ -223,14 +283,13 @@ namespace PackPreview
 
             var hotbarPng = new Image<Rgba32>(outputDimensions.Width, outputDimensions.Height);
 
-            using var widgetsPng = Loader.LoadTexture("assets/minecraft/textures/gui/widgets.png");
-            using var hotbarlist = ImageUtils.CropImage(widgetsPng, 0, 0, 182, 22, SCALE);
-            using var hotbarselected = ImageUtils.CropImage(widgetsPng, 0, 22, 24, 24, SCALE);
+            using var hotbarlist = WidgetsCropper.Crop(0, 0, 182, 22);
+            using var hotbarselected = WidgetsCropper.Crop(0, 22, 24, 24);
 
             var padding = 1;
             hotbarPng.Mutate(x => x
                 .DrawImage(hotbarlist, new Point(0, padding * SCALE), 1f)
-                .DrawImage(hotbarselected, new Point(20 * SCALE, 0), 1f)
+                .DrawImage(hotbarselected, new Point(19 * SCALE, 0), 1f)
             );
 
             hotbarPng.SaveAsPng("output/hotbar.png");
