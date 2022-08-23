@@ -5,7 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using PackPreview.ImageLoaders;
-using SixLabors.ImageSharp;
+using Newtonsoft.Json;
+using PackPreview.Json;
+using PackPreview.ImageSavers;
 
 namespace PackPreview
 {
@@ -14,20 +16,14 @@ namespace PackPreview
         private static Dictionary<string, string> Arguments;
         static void Main(string[] args)
         {
-            Arguments = ResolveArguments(args);
+            var json = JsonConvert.DeserializeObject<JsonGroupParent>(File.ReadAllText("groups.json"));
 
-
-            var scale = int.Parse(GetArgument("scale", "4"));
-            var pack = GetArgument("pack", "base.zip");
-
-            Directory.CreateDirectory("output");
-
-            var ziploader = new ZipTextureLoader(pack);
-            //var dirloader = new DirectoryTextureLoader("nameless");
-
-            var generator = new PackPreviewGenerator(ziploader);
-
-            generator.GeneratePreview(scale).SaveAsPng("output/preview.png");
+            Directory.CreateDirectory("output compliance");
+            Directory.CreateDirectory("output phqdark");
+            Console.WriteLine("loading compliance");
+            new PackPreviewGenerator(new ZipTextureLoader("compliance.zip"), new DirectoryTextureSaver("output compliance")).GeneratePreview(json);
+            Console.WriteLine("loading phqdark");
+            new PackPreviewGenerator(new ZipTextureLoader("phqdark.zip"), new DirectoryTextureSaver("output phqdark")).GeneratePreview(json);
 
         }
 

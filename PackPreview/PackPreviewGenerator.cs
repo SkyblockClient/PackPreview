@@ -1,4 +1,6 @@
 ﻿using PackPreview.ImageLoaders;
+using PackPreview.ImageSavers;
+using PackPreview.Json;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -13,6 +15,7 @@ namespace PackPreview
         const int HOTBAR_BOTTOM_PIXEL = 1;
 
         private ITextureLoader Loader { get; }
+        private ITextureSaver Saver { get; }
 
         private Image<Rgba32> AsciiPng;
         private ImageCropper AsciiCropper;
@@ -24,40 +27,91 @@ namespace PackPreview
         private ImageCropper IconsCropper;
 
         private Dictionary<char, LetterPointer> letterMap;
+        private JsonGroupParent GroupParent;
 
-        public PackPreviewGenerator(ITextureLoader loader)
+        private Dictionary<string, ImageCropper> Croppers = new Dictionary<string, ImageCropper>();
+
+        public PackPreviewGenerator(ITextureLoader loader, ITextureSaver saver)
         {
             this.Loader = loader;
+            this.Saver = saver;
+
             this.AsciiPng = Loader.LoadTexture(
                 "assets/minecraft/mcpatcher/font/ascii.png",
                 "assets/minecraft/textures/font/ascii.png"
             );
             this.letterMap = LetterMapGenerator.GenerateLetterMapFromAscii(AsciiPng);
+        }
 
+        public void GeneratePreview(JsonGroupParent parent)
+        {
+            this.GroupParent = parent;
 
+            foreach (var image in parent.Images)
+            {
+                this.Croppers.Add(image.Alias, new ImageCropper(Loader.LoadTexture(image.Texture), image.VanillaWidth, parent.Scale));
+            }
+
+            foreach (var group in parent.Groups)
+            {
+                CruiseGroup(group);
+            }
+        }
+
+        public Image<Rgba32> CruiseGroup(JsonGroup group)
+        {
+            var image = new Image<Rgba32>(group.Width * GroupParent.Scale, group.Height * GroupParent.Scale);
+
+            if (group.HasTexture)
+            {
+                var point = new Point(0, 0);
+                Console.WriteLine(group.Alias);
+
+                using var crop = Croppers[group.Texture].Crop(group.CropX, group.CropY, group.Width, group.Height);
+                image.Mutate(o => o
+                    .DrawImage(crop, point, 1f)
+                );
+            }
+
+            foreach (var child in group.Children)
+            {
+                image.Mutate(o => o
+                    .DrawImage(CruiseGroup(child), new Point(child.OffsetX * GroupParent.Scale, child.OffsetY * GroupParent.Scale), 1f)
+                );
+            }
+
+            if (group.HasOutput)
+            {
+                Saver.SaveTexture(image, group.Output);
+            }
+
+            return image;
         }
 
         int SCALE = 4;
+
+        /*        
         public Image<Rgba32> GeneratePreview(int scale)
         {
-            this.SCALE = scale;
+        this.SCALE = scale;
 
-            this.WidgetsPng = Loader.LoadTexture("assets/minecraft/textures/gui/widgets.png");
-            this.WidgetsCropper = new ImageCropper(WidgetsPng, 256, scale);
-            this.IconsPng = Loader.LoadTexture("assets/minecraft/textures/gui/icons.png");
-            this.IconsCropper = new ImageCropper(IconsPng, 256, scale);
+        this.WidgetsPng = Loader.LoadTexture("assets/minecraft/textures/gui/widgets.png");
+        this.WidgetsCropper = new ImageCropper(WidgetsPng, 256, SCALE);
+        this.IconsPng = Loader.LoadTexture("assets/minecraft/textures/gui/icons.png");
+        this.IconsCropper = new ImageCropper(IconsPng, 256, SCALE);
 
-            this.AsciiCropper = new ImageCropper(AsciiPng, 128, scale);
+        this.AsciiCropper = new ImageCropper(AsciiPng, 128, SCALE);
 
-            var outputImage = new Image<Rgba32>(182 * SCALE, (59 + HOTBAR_BOTTOM_PIXEL * 2) * SCALE); // create output image of the correct dimensions
-            outputImage.Mutate(o => o
-                .DrawImage(ButtonGroup(), new Point(0, 0), 1f)
-                .DrawImage(HotbarGroup(), new Point(0, (20 + 1) * SCALE), 1f)
-            );
-            return outputImage;
+        var outputImage = new Image<Rgba32>(182 * SCALE, (59 + HOTBAR_BOTTOM_PIXEL * 2) * SCALE); // create output image of the correct dimensions
+        outputImage.Mutate(o => o
+        .DrawImage(ButtonGroup(), new Point(0, 0), 1f)
+        .DrawImage(HotbarGroup(), new Point(0, (20 + 1) * SCALE), 1f)
+        );
+        return outputImage;
         }
+        */
 
-        Image LetterGroupOld(string letters)
+        Image LetterGroup(string letters)
         {
             var fontScale = 1;
             var scale = SCALE;
@@ -99,12 +153,11 @@ namespace PackPreview
 
             return textPng;
         }
-        Image LetterGroup(string letters)
+        Image LetterGroupBad(string letters)
         {
             var fontScale = 1;
             var scale = SCALE;
             var letterSize = new Size(8, 8);
-
 
             fontScale = AsciiPng.Width / 128;
 
@@ -239,7 +292,7 @@ namespace PackPreview
 
             return hotbargroupPng;
         }
-        Image HeartGroup()
+        Image HeartGroup()  
         {
             var scale = SCALE;
             var outputDimensions = new Size((8 * 10 + 1) * scale, 9 * scale);
